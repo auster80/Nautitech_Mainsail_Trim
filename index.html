@@ -269,16 +269,18 @@
   }
 
   // Geometry & sizing
-  let W=0,H=0; function resize(){
-    const r=view.getBoundingClientRect();
-    // Ensure the canvas gets a sensible height even if layout is momentarily 0
-    const minH = Math.max(200, Math.floor(r.height));
-    W=Math.floor(r.width*DPR); H=Math.floor(minH*DPR);
-    view.width=W; view.height=H;
-    view.style.width=r.width+'px'; view.style.height=(minH)+'px';
+  let W=0, H=0;
+  function resizeCanvas(){
+    const r = view.parentElement.getBoundingClientRect();
+    W = Math.floor(r.width * DPR);
+    H = Math.floor(r.height * DPR);
+    view.width = W; view.height = H;
+    view.style.width = r.width + 'px';
+    view.style.height = r.height + 'px';
   }
-  window.addEventListener('resize', resize);
-  resize();
+  window.addEventListener('resize', resizeCanvas);
+  new ResizeObserver(resizeCanvas).observe(view.parentElement);
+  resizeCanvas();
 
   // Build bands
   function compute(){
