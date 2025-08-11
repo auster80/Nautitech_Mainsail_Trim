@@ -3,28 +3,24 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Nautitech Open 40 — Mainsail Trim & Airflow Simulator (Fixed + Pan/Zoom/Rotate)</title>
+<title>Nautitech Open 40 — Mainsail Trim & Airflow Simulator (3D)</title>
 <style>
-  :root{
-    --bg:#0b1220; --panel:#0f1628; --ink:#e6eefb; --muted:#9fb2d6;
-    --accent:#5dd3ff; --ok:#35d07f; --warn:#ffcc00; --bad:#ff5d6c;
-  }
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"}
-  .wrap{display:grid;grid-template-columns: 340px 1fr 340px;grid-template-rows:auto 1fr;gap:14px;height:100%;padding:14px;box-sizing:border-box}
+  :root{--bg:#0b1220;--panel:#0f1628;--ink:#e6eefb;--muted:#9fb2d6;--accent:#5dd3ff;--ok:#35d07f;--warn:#ffcc00;--bad:#ff5d6c;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+  .wrap{display:grid;grid-template-columns:340px 1fr 340px;grid-template-rows:auto 1fr;gap:14px;height:100%;padding:14px;box-sizing:border-box}
   header{grid-column:1/-1;background:linear-gradient(135deg,#0f1b34,#0d203c 55%,#0d1a2b);border:1px solid #1f2b47;border-radius:14px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
   header h1{font-size:18px;margin:0;font-weight:650}
   header .sub{color:var(--muted);font-size:12px}
   .panel{background:var(--panel);border:1px solid #1f2b47;border-radius:14px;padding:12px 12px;box-sizing:border-box}
-  .controls{display:flex;flex-direction:column;gap:14px;}
+  .controls{display:flex;flex-direction:column;gap:14px}
   .group{padding:10px;border-radius:12px;background:#0c1730;border:1px solid #112246}
   .group h3{margin:2px 0 10px;font-size:14px;color:var(--accent);letter-spacing:.2px}
-  .row{display:grid;grid-template-columns: 1fr auto;gap:10px;align-items:center;margin:6px 0}
+  .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin:6px 0}
   label{font-size:12px;color:var(--muted)}
   input[type=range]{width:100%}
   .val{min-width:90px;text-align:right;font-variant-numeric:tabular-nums}
   .canvasWrap{position:relative;height:100%}
   #view{width:100%;height:100%;display:block;background:conic-gradient(from 180deg at 50% 50%,#0a1326,#0a152a,#0b1a35 60%,#0b1830);border-radius:12px}
-  /* Mouse feedback */
   canvas.grab{cursor:grab}
   canvas.grabbing{cursor:grabbing}
   .legend{font-size:12px;color:var(--muted)}
@@ -35,7 +31,7 @@
   .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--bad),#ffa83d,#ffd86a,#30d97e);width:0%}
   .readout{font-size:12px;color:var(--muted);margin-top:6px;white-space:pre-line}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid #1f2b47;background:#0d1b34;color:var(--muted)}
-  .grid{display:grid;grid-template-columns: 1fr 1fr;gap:12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .note{font-size:11px;color:#89a1c6}
   .footer{font-size:11px;color:var(--muted)}
   .btn{cursor:pointer;border:1px solid #21406f;background:#0e2145;color:#d7e6ff;padding:6px 10px;border-radius:10px;font-size:12px}
@@ -43,485 +39,124 @@
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div>
-        <h1>Nautitech Open 40 — Square‑Top Main: Trim & Airflow Simulator</h1>
-        <div class="sub">Illustrative (not CFD). Wind shear, twist, tell‑tales & efficiency. Now with mouse pan/zoom/rotate.</div>
-      </div>
-      <div><button class="btn" id="reset">Reset</button></div>
-    </header>
-
-    <section class="panel" style="grid-row:2;grid-column:1">
-      <div class="controls">
-        <div class="group">
-          <h3>Wind</h3>
-          <div class="row"><label>True wind speed (m·s⁻¹)</label><span class="val"><span id="twsVal"></span> m/s  (<span id="twsKt"></span> kn)</span></div>
-          <input id="tws" type="range" min="2" max="16" step="0.1" />
-          <div class="row"><label>True wind direction (°T, from)</label><span class="val" id="twdVal"></span></div>
-          <input id="twd" type="range" min="0" max="359" step="1" />
-        </div>
-        <div class="group">
-          <h3>Boat</h3>
-          <div class="row"><label>Heading (°T)</label><span class="val" id="hdgVal"></span></div>
-          <input id="hdg" type="range" min="0" max="359" step="1" />
-          <div class="row"><label>Speed over ground (m·s⁻¹)</label><span class="val"><span id="sogVal"></span> m/s  (<span id="sogKt"></span> kn)</span></div>
-          <input id="sog" type="range" min="0" max="7" step="0.1" />
-        </div>
-        <div class="group">
-          <h3>Main Trim</h3>
-          <div class="row"><label>Mainsheet tension</label><span class="val"><span id="sheetVal"></span>% tight</span></div>
-          <input id="sheet" type="range" min="0" max="100" step="1" />
-          <div class="row"><label>Traveller position</label><span class="val"><span id="travVal"></span>% (− leeward / + windward)</span></div>
-          <input id="trav" type="range" min="-100" max="100" step="1" />
-        </div>
-        <div class="group">
-          <h3>Model Options</h3>
-          <div class="row"><label>Wind shear exponent α</label><span class="val" id="alphaVal"></span></div>
-          <input id="alpha" type="range" min="0" max="0.3" step="0.01" />
-          <div class="row"><label>Target AoA range (°)</label><span class="val"><span id="aoaMinVal"></span>–<span id="aoaMaxVal"></span></span></div>
-          <input id="aoaMin" type="range" min="0" max="12" step="0.5" />
-          <input id="aoaMax" type="range" min="6" max="20" step="0.5" />
-          <div class="row"><label>Show streamlines</label><span class="val"><span id="flowVal">on</span></span></div>
-          <input id="flow" type="range" min="0" max="1" step="1" />
-        </div>
-      </div>
-    </section>
-
-    <section class="panel canvasWrap" style="grid-row:2;grid-column:2">
-      <canvas id="view"></canvas>
-    </section>
-
-    <aside class="panel" style="grid-row:2;grid-column:3">
-      <div class="kpis">
-        <div class="kpi">
-          <h4>Trim efficiency</h4>
-          <div class="bar"><i id="effBar"></i></div>
-          <div class="readout" id="effTxt"></div>
-        </div>
-        <div class="kpi">
-          <h4>Angles</h4>
-          <div class="grid legend">
-            <div>AWA @ boom: <span class="pill" id="awaDeck"></span></div>
-            <div>AWA @ head: <span class="pill" id="awaHead"></span></div>
-            <div>TWA: <span class="pill" id="twa"></span></div>
-            <div>Boom angle to CL: <span class="pill" id="boomAng"></span></div>
-          </div>
-          <div class="readout" id="aoaBands"></div>
-        </div>
-        <div class="kpi">
-          <h4>Tell‑tales</h4>
-          <div class="readout note">Green = leeward attached, Red = windward lift. Grey = stall.</div>
-          <div class="readout" id="taleTxt"></div>
-        </div>
-        <div class="kpi">
-          <h4>Sail & Rig (fixed)</h4>
-          <div class="legend">
-            Luff (mast) height ≈ 18.5 m<br>
-            Foot ≈ 5.3 m, Roach (square‑top) +0.8 m<br>
-            Reference height z₀ = 10 m for shear model
-          </div>
-        </div>
-        <div class="footer">Illustrative only; not a substitute for instrumented sea trials or CFD. © You may modify and reuse.</div>
-      </div>
-    </aside>
+<div class="wrap">
+<header>
+  <div>
+    <h1>Nautitech Open 40 — Square‑Top Main: Trim & Airflow Simulator</h1>
+    <div class="sub">Illustrative (not CFD). Wind shear, twist, tell‑tales & efficiency. Now with mouse pan/zoom/rotate.</div>
   </div>
-
-<script>
-(function(){
-  const el = id => document.getElementById(id);
-  const view = el('view');
-  const ctx = view.getContext('2d');
-  const DPR = Math.max(1, window.devicePixelRatio||1);
-
-  // Controls
-  const controls = {
-    tws: el('tws'), twsVal: el('twsVal'), twsKt: el('twsKt'),
-    twd: el('twd'), twdVal: el('twdVal'),
-    hdg: el('hdg'), hdgVal: el('hdgVal'),
-    sog: el('sog'), sogVal: el('sogVal'), sogKt: el('sogKt'),
-    sheet: el('sheet'), sheetVal: el('sheetVal'),
-    trav: el('trav'), travVal: el('travVal'),
-    alpha: el('alpha'), alphaVal: el('alphaVal'),
-    aoaMin: el('aoaMin'), aoaMax: el('aoaMax'), aoaMinVal: el('aoaMinVal'), aoaMaxVal: el('aoaMaxVal'),
-    flow: el('flow'), flowVal: el('flowVal'),
-  };
-
-  // Outputs
-  const out = {
-    effBar: el('effBar'), effTxt: el('effTxt'),
-    awaDeck: el('awaDeck'), awaHead: el('awaHead'), twa: el('twa'), boomAng: el('boomAng'),
-    aoaBands: el('aoaBands'), taleTxt: el('taleTxt'),
-  };
-
-  // Model constants (approx for Nautitech Open 40 square‑top)
-  const SAIL = {
-    height: 18.5, // m
-    foot: 5.3,    // m
-    headExtra: 0.8, // m roach/square top extension
-    refZ: 10.0, // m for wind shear
-    bands: 7,  // computational strips
-  };
-
-  // State
-  const state = {
-    tws: 8.0, twd: 60, // m/s, from °T
-    hdg: 35, sog: 3.5, // m/s, °T
-    sheet: 75, trav: -10, // %
-    alpha: 0.12, // wind shear exponent
-    aoaMin: 6, aoaMax: 14,
-    flow: 1,
-  };
-
-  // Camera (pan/zoom/rotate)
-  const cam = { scale: 1, rot: 0, panX: 0, panY: 0 }; // pan in CSS pixels * DPR
-  function resetCam(){ cam.scale=1; cam.rot=0; cam.panX=0; cam.panY=0; }
-
-  function worldToScreen(wx, wy){
-    const cx=W*0.5, cy=H*0.5; const cosR=Math.cos(cam.rot), sinR=Math.sin(cam.rot);
-    const x=(wx-cx)*cam.scale; const y=(wy-cy)*cam.scale;
-    const xr=x*cosR - y*sinR; const yr=x*sinR + y*cosR;
-    return { x:xr + cx + cam.panX, y:yr + cy + cam.panY };
-  }
-  function screenToWorld(sx, sy){
-    const cx=W*0.5, cy=H*0.5; const cosR=Math.cos(cam.rot), sinR=Math.sin(cam.rot);
-    let x=sx - cam.panX - cx; let y=sy - cam.panY - cy;
-    const xr=x*cosR + y*sinR; const yr=-x*sinR + y*cosR;
-    return { x:xr / cam.scale + cx, y:yr / cam.scale + cy };
-  }
-
-  // Helpers
-  const rad = d=>d*Math.PI/180; const deg = r=>r*180/Math.PI; const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-  const wrap360 = a => (a%360+360)%360;
-  const ms2kt = v=>v*1.943844; const kt2ms = v=>v/1.943844;
-
-  function vFromDirMag(dirDeg, mag){ // direction TO which vector points
-    const th = rad(dirDeg);
-    return {x: Math.sin(th)*mag, y: -Math.cos(th)*mag}; // screen y downwards
-  }
-  function dirDeg(v){ return wrap360(deg(Math.atan2(v.x, -v.y))); } // convert back
-  function sub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
-  function add(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
-  function mul(a,k){ return {x:a.x*k,y:a.y*k}; }
-  function mag(v){ return Math.hypot(v.x,v.y); }
-
-  function updateLabels(){
-    controls.twsVal.textContent = state.tws.toFixed(1);
-    controls.twsKt.textContent = ms2kt(state.tws).toFixed(1);
-    controls.twdVal.textContent = wrap360(state.twd).toFixed(0)+"°";
-    controls.hdgVal.textContent = wrap360(state.hdg).toFixed(0)+"°";
-    controls.sogVal.textContent = state.sog.toFixed(1);
-    controls.sogKt.textContent = ms2kt(state.sog).toFixed(1);
-    controls.sheetVal.textContent = state.sheet.toFixed(0);
-    controls.travVal.textContent = (state.trav>=0?"+":"")+state.trav.toFixed(0);
-    controls.alphaVal.textContent = state.alpha.toFixed(2);
-    controls.aoaMinVal.textContent = state.aoaMin.toFixed(1);
-    controls.aoaMaxVal.textContent = state.aoaMax.toFixed(1);
-    controls.flowVal.textContent = state.flow?"on":"off";
-  }
-
-  // Boom & twist model (illustrative):
-  function boomAngleDeg(){
-    const travEffect = 22 * (state.trav/100); // ±22° via traveller
-    const sheetOpen = (100-state.sheet)/100; // 0 tight .. 1 loose
-    const sheetEffect = 10*sheetOpen; // loose sheet lets boom out
-    return travEffect + sheetEffect; // + windward, − leeward
-  }
-  function baseTwistDeg(){
-    const sheetOpen = (100-state.sheet)/100;
-    return 28 * Math.pow(sheetOpen, 0.85); // 0..~28°
-  }
-
-  // Apparent wind at height z with shear (speed and mild veer aloft)
-  function apparentWindAtZ(z){
-    const alpha = state.alpha;
-    const scale = Math.pow( clamp(z,1,SAIL.height)/SAIL.refZ, alpha );
-    const veer = 6*Math.log(1 + z/SAIL.refZ); // deg veer with height
-    const twMag = state.tws*scale;
-    const trueToDir = wrap360(state.twd + 180 + veer); // wind blows from TWD to TWD+180
-    const tw = vFromDirMag(trueToDir, twMag);
-    const boat = vFromDirMag(state.hdg, state.sog);
-    const aw = sub(tw, boat);
-    return {vec:aw, dir:dirDeg(aw), mag:mag(aw)};
-  }
-
-  // AoA at band fraction h (0 bottom .. 1 top)
-  function localAoA(h){
-    const z = 0.5 + h*(SAIL.height-1);
-    const aw = apparentWindAtZ(z);
-    const boom = boomAngleDeg();
-    const twist = baseTwistDeg()*Math.pow(h, 0.8); // more twist aloft
-    const chordDir = wrap360(state.hdg + boom + twist);
-    const flowDir = aw.dir;
-    let aoa = wrap360(flowDir - chordDir);
-    if (aoa>180) aoa -= 360;
-    return {aoa, aw, chordDir, twist, boom};
-  }
-
-  function efficiency(bands){
-    const amin=state.aoaMin, amax=state.aoaMax;
-    let score=0, notes=[];
-    for(const b of bands){
-      const a = Math.abs(b.aoa);
-      let s;
-      if (a<amin) s = 1 - Math.pow((amin-a)/(amax-amin+1e-6), 1.2);
-      else if (a>amax) s = 1 - Math.pow((a-amax)/(amax-amin+1e-6), 1.1);
-      else s = 1;
-      s = clamp(s,0,1);
-      score += s;
-      let tt;
-      if (a>amax+4) tt = 'stall risk';
-      else if (a>amax) tt = 'heavy sheet / vang';
-      else if (a<amin-2) tt = 'luff risk';
-      else if (a<amin) tt = 'feathering';
-      else tt = 'attached';
-      notes.push(tt);
-    }
-    const eff = 100*score/bands.length;
-    return {eff, notes};
-  }
-
-  // Geometry & sizing
-  let W=0,H=0; function resize(){
-    const r=view.getBoundingClientRect();
-    // Ensure the canvas gets a sensible height even if layout is momentarily 0
-    const minH = Math.max(200, Math.floor(r.height));
-    W=Math.floor(r.width*DPR); H=Math.floor(minH*DPR);
-    view.width=W; view.height=H;
-    view.style.width=r.width+'px'; view.style.height=(minH)+'px';
-    resetCam();
-  }
-  window.addEventListener('resize', resize);
-  resize();
-
-  // Build bands
-  function compute(){
-    const bands=[]; const n=SAIL.bands;
-    for(let i=0;i<n;i++){
-      const h=i/(n-1);
-      const m=localAoA(h);
-      bands.push({h, ...m});
-    }
-    return bands;
-  }
-
-  // Particles for streamlines
-  const particles=[];
-  function resetParticles(){ particles.length=0; for(let i=0;i<220;i++) particles.push(spawnParticle()); }
-  function spawnParticle(){ return { t: Math.random(), band: Math.floor(Math.random()*SAIL.bands), speed: 0.2+Math.random()*0.4 }; }
-
-  function sailPath(){
-    const target = H*0.7; // fit 70% of canvas height
-    const m2p = target/SAIL.height;
-    const luff = SAIL.height*m2p;
-    const foot = SAIL.foot*m2p;
-    const headOut = SAIL.headExtra*m2p;
-    const cx=W*0.5, cy=H*0.5;
-    const baseX = cx - foot/2;
-    const baseY = cy + luff/2;
-    const tack = {x:baseX, y:baseY};
-    const clew = {x:baseX+foot, y:baseY-0.3*m2p};
-    const head = {x:baseX+headOut, y:baseY-luff};
-    const mastHead = {x:baseX, y:baseY-luff};
-    return {tack, clew, head, mastHead};
-  }
-
-  function drawScene(){
-    ctx.clearRect(0,0,W,H);
-
-    // Background grid (static)
-    ctx.save();
-    ctx.globalAlpha=0.18; ctx.strokeStyle="#173060"; ctx.lineWidth=1;
-    const step=40*DPR; for(let x=0;x<W;x+=step){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
-    for(let y=0;y<H;y+=step){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-    ctx.restore();
-
-    const bands = compute();
-
-    // ===== Apply camera transform for sail drawing =====
-    ctx.save();
-    const cx = W*0.5, cy = H*0.5;
-    ctx.translate(cam.panX, cam.panY);
-    ctx.translate(cx, cy);
-    ctx.rotate(cam.rot);
-    ctx.scale(cam.scale, cam.scale);
-    ctx.translate(-cx, -cy);
-
-    // Sail outline
-    const g = sailPath();
-    ctx.beginPath();
-    ctx.moveTo(g.tack.x, g.tack.y);
-    ctx.lineTo(g.clew.x, g.clew.y);
-    ctx.lineTo(g.head.x, g.head.y);
-    ctx.lineTo(g.mastHead.x, g.mastHead.y);
-    ctx.closePath();
-    ctx.fillStyle="#0e2043"; ctx.strokeStyle="#2d5bba"; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
-
-    // Boom line for visual angle
-    const boomAng = boomAngleDeg();
-    const boomLen = 0.92*(g.clew.x-g.tack.x);
-    const th = rad(wrap360(state.hdg + boomAng));
-    ctx.save();
-    ctx.translate(g.tack.x, g.tack.y);
-    ctx.rotate(th);
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(boomLen, -8*DPR);
-    ctx.strokeStyle="#5dd3ff"; ctx.lineWidth=3; ctx.stroke();
-    ctx.restore();
-
-    // Bands, chords, wind arrows, tell‑tales
-    out.aoaBands.textContent='';
-    let lines=[];
-    for(const b of bands){
-      const y = g.tack.y - b.h*(g.tack.y - g.mastHead.y);
-      const leechX = g.clew.x + (g.head.x - g.clew.x)*b.h;
-      const luffX = g.tack.x + (g.mastHead.x - g.tack.x)*b.h;
-      const chordLen = (leechX - luffX)*0.96;
-
-      // guide
-      ctx.beginPath(); ctx.moveTo(luffX, y); ctx.lineTo(leechX, y);
-      ctx.strokeStyle = "#1b3b75"; ctx.lineWidth=1; ctx.stroke();
-
-      // chord direction arrow
-      const cd = rad(wrap360(state.hdg + b.boom + b.twist));
-      const ux = Math.sin(cd), uy = -Math.cos(cd);
-      const cx0 = luffX, cy0 = y;
-      const cx1 = cx0 + ux*chordLen, cy1 = cy0 + uy*chordLen;
-      ctx.beginPath(); ctx.moveTo(cx0,cy0); ctx.lineTo(cx1,cy1);
-      ctx.strokeStyle="#77b1ff"; ctx.lineWidth=2; ctx.stroke();
-      const ah = 6*DPR; const ahAng = Math.PI/9;
-      function arrow(x0,y0,x1,y1){
-        const ang=Math.atan2(y1-y0,x1-x0);
-        ctx.beginPath(); ctx.moveTo(x1,y1);
-        ctx.lineTo(x1 - ah*Math.cos(ang-ahAng), y1 - ah*Math.sin(ang-ahAng));
-        ctx.lineTo(x1 - ah*Math.cos(ang+ahAng), y1 - ah*Math.sin(ang+ahAng));
-        ctx.closePath(); ctx.fillStyle="#77b1ff"; ctx.fill();
-      }
-      arrow(cx0,cy0,cx1,cy1);
-
-      // apparent wind at band
-      const awd = rad(b.aw.dir); const awx = Math.sin(awd), awy=-Math.cos(awd);
-      const awLen = 34*DPR * (0.6 + 0.4*b.aw.mag/state.tws);
-      const ax1 = cx0 + awx*awLen, ay1 = cy0 + awy*awLen;
-      ctx.beginPath(); ctx.moveTo(cx0,cy0); ctx.lineTo(ax1,ay1);
-      let awCol = "#35d07f"; const aMag = Math.abs(b.aoa);
-      if (aMag>state.aoaMax+4) awCol = "#ff5d6c"; else if (aMag>state.aoaMax) awCol="#ffa83d"; else if (aMag<state.aoaMin) awCol="#ffd86a";
-      ctx.strokeStyle = awCol; ctx.lineWidth=2; ctx.stroke(); arrow(cx0,cy0,ax1,ay1);
-
-      // tell‑tales
-      const ttDist = chordLen*0.15; const ttSpacing = 8*DPR;
-      const baseX = cx0 + ux*ttDist, baseY = cy0 + uy*ttDist;
-      const ao = b.aoa;
-      function drawTale(col, side){
-        const attach = (Math.abs(ao)>=state.aoaMin && Math.abs(ao)<=state.aoaMax);
-        let angle = rad(b.aw.dir) + (attach?0: side*(ao>0?-0.8:0.8));
-        if (!attach && Math.abs(ao)>state.aoaMax) angle = rad(b.aw.dir) + side*0.9;
-        const len = 18*DPR*(attach?1.0:0.6);
-        const tx = baseX + side*ttSpacing*Math.cos(rad(90));
-        const ty = baseY + side*ttSpacing*Math.sin(rad(90));
-        const ex = tx + Math.sin(angle)*len; const ey = ty - Math.cos(angle)*len;
-        ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(ex,ey);
-        ctx.strokeStyle = col; ctx.lineWidth=2; ctx.stroke();
-      }
-      drawTale('#ff5d6c', -1); drawTale('#2ee080', +1);
-
-      lines.push({x0:cx0,y0:cy0, x1:cx1,y1:cy1, aoa:b.aoa});
-      out.aoaBands.textContent += `Band ${Math.round(b.h*100)}%: AoA ${b.aoa.toFixed(1)}°  (twist +${b.twist.toFixed(1)}°)\n`;
-    }
-
-    // particles
-    if (state.flow){
-      for(const p of particles){
-        const L = lines[p.band%lines.length]; if(!L) continue;
-        p.t += p.speed*0.006; if (p.t>1){ p.t=0; p.band=(p.band+1)%SAIL.bands; }
-        const t = p.t;
-        const x = L.x0 + (L.x1-L.x0)*t + Math.sin((t+p.band)*8)*6*DPR;
-        const y = L.y0 + (L.y1-L.y0)*t + Math.cos((t+p.band)*7)*3*DPR;
-        const stall = Math.abs(L.aoa)>state.aoaMax+4;
-        ctx.fillStyle = stall?"#7a2a34":"#66e0ff";
-        ctx.beginPath(); ctx.arc(x,y, stall?1.5*DPR:1.2*DPR, 0, Math.PI*2); ctx.fill();
-      }
-    }
-
-    ctx.restore(); // end camera block
-
-    // KPI readouts (not transformed)
-    const deckAW = localAoA(0.05).aw.dir; const headAW = localAoA(0.95).aw.dir;
-    out.awaDeck.textContent = `${wrap360(deckAW).toFixed(0)}°`;
-    out.awaHead.textContent = `${wrap360(headAW).toFixed(0)}°`;
-    const twa = wrap360(state.twd - state.hdg); out.twa.textContent = `${twa.toFixed(0)}°`;
-    out.boomAng.textContent = `${boomAngleDeg().toFixed(1)}°`;
-
-    const eff = efficiency(bands);
-    out.effBar.style.width = `${eff.eff.toFixed(0)}%`;
-    out.effBar.style.background = `linear-gradient(90deg, var(--bad), #ffa83d, #ffd86a, var(--ok))`;
-    out.effTxt.textContent = `Efficiency: ${eff.eff.toFixed(0)} / 100\nGuidance: keep mid‑band AoA within ${state.aoaMin.toFixed(0)}–${state.aoaMax.toFixed(0)}°; traveller for groove, sheet for twist.`;
-
-    out.taleTxt.textContent = eff.notes.map((t,i)=>`Band ${Math.round(i*100/(eff.notes.length-1))}%: ${t}`).join("\n");
-  }
-
-  // Animation loop
-  let last=0; function tick(ts){ if (!last) last=ts; last=ts; drawScene(); requestAnimationFrame(tick); }
-
-  // Mouse interactions
-  const drag = { mode:null, x:0, y:0, sx:0, sy:0, world:null, startRot:0 };
-  function getMouse(e){ const r=view.getBoundingClientRect(); return { x:(e.clientX - r.left)*DPR, y:(e.clientY - r.top)*DPR }; }
-  view.addEventListener('contextmenu', e=>e.preventDefault());
-  view.classList.add('grab');
-  view.addEventListener('mousedown', e=>{
-    const m=getMouse(e); drag.x=m.x; drag.y=m.y; drag.sx=m.x; drag.sy=m.y;
-    if (e.button===0 && !e.altKey){ drag.mode='pan'; view.classList.remove('grab'); view.classList.add('grabbing'); }
-    else { drag.mode='rot'; drag.world=screenToWorld(m.x,m.y); drag.startRot=cam.rot; }
-  });
-  window.addEventListener('mouseup', ()=>{ drag.mode=null; view.classList.remove('grabbing'); view.classList.add('grab'); });
-  window.addEventListener('mouseleave', ()=>{ drag.mode=null; view.classList.remove('grabbing'); view.classList.add('grab'); });
-  window.addEventListener('mousemove', e=>{
-    if(!drag.mode) return; const m=getMouse(e);
-    if(drag.mode==='pan'){
-      const dx=m.x-drag.x, dy=m.y-drag.y; drag.x=m.x; drag.y=m.y;
-      cam.panX += dx; cam.panY += dy;
-    } else if(drag.mode==='rot'){
-      cam.rot = drag.startRot + (m.x - drag.sx)*0.005;
-      const p = worldToScreen(drag.world.x, drag.world.y);
-      cam.panX += m.x - p.x; cam.panY += m.y - p.y;
-    }
-  });
-  view.addEventListener('wheel', e=>{
-    e.preventDefault();
-    const m=getMouse(e);
-    const pre = screenToWorld(m.x, m.y);
-    const dir = (e.deltaY<0)?1.1:1/1.1; const ns = clamp(cam.scale*dir, 0.4, 5);
-    cam.scale = ns;
-    const post = worldToScreen(pre.x, pre.y);
-    cam.panX += m.x - post.x; cam.panY += m.y - post.y;
-  }, {passive:false});
-  view.addEventListener('dblclick', ()=>{ resetCam(); });
-
-  function bind(){
-    const bindOne=(input, key, map=(v)=>+v)=>{
-      input.addEventListener('input', ()=>{ state[key]=map(input.value); updateLabels(); });
-    };
-    controls.tws.value=state.tws; bindOne(controls.tws,'tws', v=>+v);
-    controls.twd.value=state.twd; bindOne(controls.twd,'twd', v=>wrap360(+v));
-    controls.hdg.value=state.hdg; bindOne(controls.hdg,'hdg', v=>wrap360(+v));
-    controls.sog.value=state.sog; bindOne(controls.sog,'sog', v=>+v);
-    controls.sheet.value=state.sheet; bindOne(controls.sheet,'sheet', v=>+v);
-    controls.trav.value=state.trav; bindOne(controls.trav,'trav', v=>+v);
-    controls.alpha.value=state.alpha; bindOne(controls.alpha,'alpha', v=>+v);
-    controls.aoaMin.value=state.aoaMin; bindOne(controls.aoaMin,'aoaMin', v=>+v);
-    controls.aoaMax.value=state.aoaMax; bindOne(controls.aoaMax,'aoaMax', v=>+v);
-    controls.flow.value=state.flow; bindOne(controls.flow,'flow', v=>+v);
-
-    document.getElementById('reset').addEventListener('click', ()=>{
-      Object.assign(state,{ tws:8, twd:60, hdg:35, sog:3.5, sheet:75, trav:-10, alpha:0.12, aoaMin:6, aoaMax:14, flow:1 });
-      controls.tws.value=state.tws; controls.twd.value=state.twd; controls.hdg.value=state.hdg; controls.sog.value=state.sog;
-      controls.sheet.value=state.sheet; controls.trav.value=state.trav; controls.alpha.value=state.alpha;
-      controls.aoaMin.value=state.aoaMin; controls.aoaMax.value=state.aoaMax; controls.flow.value=state.flow;
-      updateLabels(); resetParticles(); resetCam();
-    });
-  }
-
-  bind(); updateLabels(); resetParticles(); requestAnimationFrame(tick);
-})();
+  <div><button class="btn" id="reset">Reset</button></div>
+</header>
+<section class="panel" style="grid-row:2;grid-column:1">
+  <div class="controls">
+    <div class="group">
+      <h3>Wind</h3>
+      <div class="row"><label>True wind speed (m·s⁻¹)</label><span class="val"><span id="twsVal"></span> m/s  (<span id="twsKt"></span> kn)</span></div>
+      <input id="tws" type="range" min="2" max="16" step="0.1" />
+      <div class="row"><label>True wind direction (°T, from)</label><span class="val" id="twdVal"></span></div>
+      <input id="twd" type="range" min="0" max="359" step="1" />
+    </div>
+    <div class="group">
+      <h3>Boat</h3>
+      <div class="row"><label>Heading (°T)</label><span class="val" id="hdgVal"></span></div>
+      <input id="hdg" type="range" min="0" max="359" step="1" />
+      <div class="row"><label>Speed over ground (m·s⁻¹)</label><span class="val"><span id="sogVal"></span> m/s  (<span id="sogKt"></span> kn)</span></div>
+      <input id="sog" type="range" min="0" max="7" step="0.1" />
+    </div>
+    <div class="group">
+      <h3>Main Trim</h3>
+      <div class="row"><label>Mainsheet tension</label><span class="val"><span id="sheetVal"></span>% tight</span></div>
+      <input id="sheet" type="range" min="0" max="100" step="1" />
+      <div class="row"><label>Traveller position</label><span class="val"><span id="travVal"></span>% (− leeward / + windward)</span></div>
+      <input id="trav" type="range" min="-100" max="100" step="1" />
+    </div>
+    <div class="group">
+      <h3>Model Options</h3>
+      <div class="row"><label>Wind shear exponent α</label><span class="val" id="alphaVal"></span></div>
+      <input id="alpha" type="range" min="0" max="0.3" step="0.01" />
+      <div class="row"><label>Target AoA range (°)</label><span class="val"><span id="aoaMinVal"></span>–<span id="aoaMaxVal"></span></span></div>
+      <input id="aoaMin" type="range" min="0" max="12" step="0.5" />
+      <input id="aoaMax" type="range" min="6" max="20" step="0.5" />
+      <div class="row"><label>Show streamlines</label><span class="val"><span id="flowVal">on</span></span></div>
+      <input id="flow" type="range" min="0" max="1" step="1" />
+    </div>
+  </div>
+</section>
+<section class="panel canvasWrap" style="grid-row:2;grid-column:2">
+  <canvas id="view"></canvas>
+</section>
+<aside class="panel" style="grid-row:2;grid-column:3">
+  <div class="kpis">
+    <div class="kpi">
+      <h4>Trim efficiency</h4>
+      <div class="bar"><i id="effBar"></i></div>
+      <div class="readout" id="effTxt"></div>
+    </div>
+    <div class="kpi">
+      <h4>Angles</h4>
+      <div class="grid legend">
+        <div>AWA @ boom: <span class="pill" id="awaDeck"></span></div>
+        <div>AWA @ head: <span class="pill" id="awaHead"></span></div>
+        <div>TWA: <span class="pill" id="twa"></span></div>
+        <div>Boom angle to CL: <span class="pill" id="boomAng"></span></div>
+      </div>
+      <div class="readout" id="aoaBands"></div>
+    </div>
+    <div class="kpi">
+      <h4>Tell‑tales</h4>
+      <div class="readout note">Green = leeward attached, Red = windward lift. Grey = stall.</div>
+      <div class="readout" id="taleTxt"></div>
+    </div>
+    <div class="kpi">
+      <h4>Sail & Rig (fixed)</h4>
+      <div class="legend">
+        Luff (mast) height ≈ 18.5 m<br>
+        Foot ≈ 5.3 m, Roach (square‑top) +0.8 m<br>
+        Reference height z₀ = 10 m for shear model
+      </div>
+    </div>
+    <div class="footer">Illustrative only; not a substitute for instrumented sea trials or CFD. © You may modify and reuse.</div>
+  </div>
+</aside>
+</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/controls/OrbitControls.js';
+const el=id=>document.getElementById(id);
+const canvas=el('view');
+const DPR=Math.max(1,window.devicePixelRatio||1);
+const controls={tws:el('tws'),twsVal:el('twsVal'),twsKt:el('twsKt'),twd:el('twd'),twdVal:el('twdVal'),hdg:el('hdg'),hdgVal:el('hdgVal'),sog:el('sog'),sogVal:el('sogVal'),sogKt:el('sogKt'),sheet:el('sheet'),sheetVal:el('sheetVal'),trav:el('trav'),travVal:el('travVal'),alpha:el('alpha'),alphaVal:el('alphaVal'),aoaMin:el('aoaMin'),aoaMax:el('aoaMax'),aoaMinVal:el('aoaMinVal'),aoaMaxVal:el('aoaMaxVal'),flow:el('flow'),flowVal:el('flowVal')};
+const out={effBar:el('effBar'),effTxt:el('effTxt'),awaDeck:el('awaDeck'),awaHead:el('awaHead'),twa:el('twa'),boomAng:el('boomAng'),aoaBands:el('aoaBands'),taleTxt:el('taleTxt')};
+const SAIL={height:18.5,foot:5.3,headExtra:0.8,refZ:10,bands:7};
+const state={tws:8,twd:60,hdg:35,sog:3.5,sheet:75,trav:-10,alpha:0.12,aoaMin:6,aoaMax:14,flow:1};
+const rad=d=>d*Math.PI/180,deg=r=>r*180/Math.PI,clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),wrap360=a=>(a%360+360)%360,ms2kt=v=>v*1.943844;
+function vFromDirMag(d,m){const t=rad(d);return{x:Math.sin(t)*m,y:-Math.cos(t)*m};}
+function dirDeg(v){return wrap360(deg(Math.atan2(v.x,-v.y)));}
+function sub(a,b){return{x:a.x-b.x,y:a.y-b.y};}
+function mag(v){return Math.hypot(v.x,v.y);}
+function updateLabels(){controls.twsVal.textContent=state.tws.toFixed(1);controls.twsKt.textContent=ms2kt(state.tws).toFixed(1);controls.twdVal.textContent=wrap360(state.twd).toFixed(0)+"°";controls.hdgVal.textContent=wrap360(state.hdg).toFixed(0)+"°";controls.sogVal.textContent=state.sog.toFixed(1);controls.sogKt.textContent=ms2kt(state.sog).toFixed(1);controls.sheetVal.textContent=state.sheet.toFixed(0);controls.travVal.textContent=(state.trav>=0?"+":"")+state.trav.toFixed(0);controls.alphaVal.textContent=state.alpha.toFixed(2);controls.aoaMinVal.textContent=state.aoaMin.toFixed(1);controls.aoaMaxVal.textContent=state.aoaMax.toFixed(1);controls.flowVal.textContent=state.flow?"on":"off";}
+function boomAngleDeg(){const travEffect=22*(state.trav/100);const sheetOpen=(100-state.sheet)/100;return travEffect+10*sheetOpen;}
+function baseTwistDeg(){const sheetOpen=(100-state.sheet)/100;return 28*Math.pow(sheetOpen,0.85);}
+function apparentWindAtZ(z){const scale=Math.pow(clamp(z,1,SAIL.height)/SAIL.refZ,state.alpha);const veer=6*Math.log(1+z/SAIL.refZ);const twMag=state.tws*scale;const trueToDir=wrap360(state.twd+180+veer);const tw=vFromDirMag(trueToDir,twMag);const boat=vFromDirMag(state.hdg,state.sog);const aw=sub(tw,boat);return{vec:aw,dir:dirDeg(aw),mag:mag(aw)};}
+function localAoA(h){const z=0.5+h*(SAIL.height-1);const aw=apparentWindAtZ(z);const boom=boomAngleDeg();const twist=baseTwistDeg()*Math.pow(h,0.8);const chordDir=wrap360(state.hdg+boom+twist);let aoa=wrap360(aw.dir-chordDir);if(aoa>180)aoa-=360;return{aoa,aw,chordDir,twist,boom,h};}
+function efficiency(b){const amin=state.aoaMin,amax=state.aoaMax;let score=0,notes=[];for(const x of b){const a=Math.abs(x.aoa);let s;if(a<amin)s=1-Math.pow((amin-a)/(amax-amin+1e-6),1.2);else if(a>amax)s=1-Math.pow((a-amax)/(amax-amin+1e-6),1.1);else s=1;s=clamp(s,0,1);score+=s;let tt;if(a>amax+4)tt='stall risk';else if(a>amax)tt='heavy sheet / vang';else if(a<amin-2)tt='luff risk';else if(a<amin)tt='feathering';else tt='attached';notes.push(tt);}return{eff:100*score/b.length,notes};}
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixelRatio(DPR);const scene=new THREE.Scene();scene.background=new THREE.Color(0x0b1830);const camera=new THREE.PerspectiveCamera(45,1,0.1,1000);const controls3d=new OrbitControls(camera,canvas);controls3d.enableDamping=true;const ambient=new THREE.AmbientLight(0xffffff,0.4);scene.add(ambient);const dirLight=new THREE.DirectionalLight(0xffffff,0.8);dirLight.position.set(5,10,5);scene.add(dirLight);let sailMesh;const tellGroup=new THREE.Group();scene.add(tellGroup);let needsRebuild=true;
+function chordLen(h){const c0=SAIL.foot,c1=c0*0.25+SAIL.headExtra;return THREE.MathUtils.lerp(c0,c1,Math.pow(h,0.7));}
+function aoaColor(a){a=Math.abs(a);if(a>state.aoaMax+4)return new THREE.Color('#ff5d6c');if(a>state.aoaMax)return new THREE.Color('#ffa83d');if(a<state.aoaMin)return new THREE.Color('#ffd86a');return new THREE.Color('#30d97e');}
+function buildSailGeometry(bm,tw){const Nh=64,Ns=16;const vc=(Nh+1)*(Ns+1);const pos=new Float32Array(vc*3);const col=new Float32Array(vc*3);let idx=0;for(let i=0;i<=Nh;i++){const h=i/Nh;const ch=chordLen(h);const yaw=rad(bm+tw*Math.pow(h,0.8));const cosYaw=Math.cos(yaw),sinYaw=Math.sin(yaw);const dir=new THREE.Vector3(cosYaw,0,sinYaw);const normal=new THREE.Vector3(-sinYaw,0,cosYaw).normalize();const ao=localAoA(h);const color=aoaColor(ao.aoa);for(let j=0;j<=Ns;j++){const s=j/Ns;const base=new THREE.Vector3(0,h*SAIL.height,0);const p=base.clone().add(dir.clone().multiplyScalar(s*ch));const camber=0.08*ch*4*s*(1-s);p.add(normal.clone().multiplyScalar(camber));pos[idx*3]=p.x;pos[idx*3+1]=p.y;pos[idx*3+2]=p.z;col[idx*3]=color.r;col[idx*3+1]=color.g;col[idx*3+2]=color.b;idx++;}}const indices=[];for(let i=0;i<Nh;i++){for(let j=0;j<Ns;j++){const a=i*(Ns+1)+j,b=a+(Ns+1),c=a+1,d=b+1;indices.push(a,b,c,c,b,d);}}const geom=new THREE.BufferGeometry();geom.setIndex(indices);geom.setAttribute('position',new THREE.BufferAttribute(pos,3));geom.setAttribute('color',new THREE.BufferAttribute(col,3));geom.computeVertexNormals();return geom;}
+function updateTelltales(bm,tw){tellGroup.clear();const heights=[0.2,0.4,0.6,0.8];for(const h of heights){const info=localAoA(h);const yaw=rad(bm+tw*Math.pow(h,0.8));const c=chordLen(h);const dir=new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));const normal=new THREE.Vector3(-Math.sin(yaw),0,Math.cos(yaw));const base=new THREE.Vector3(0,h*SAIL.height,0).add(dir.clone().multiplyScalar(0.15*c));const attach=Math.abs(info.aoa)>=state.aoaMin&&Math.abs(info.aoa)<=state.aoaMax;const deflect=attach?0:(info.aoa>0?-0.8:0.8);const flowDir=dir.clone().applyAxisAngle(new THREE.Vector3(0,1,0),rad(info.aoa)+deflect);const len=0.4*(attach?1:0.6);for(const side of [-1,1]){const offset=normal.clone().multiplyScalar(0.05*side);const geo=new THREE.BufferGeometry().setFromPoints([base.clone().add(offset),base.clone().add(offset).add(flowDir.clone().multiplyScalar(len))]);const mat=new THREE.LineBasicMaterial({color:side===-1?0xff5d6c:0x2ee080});tellGroup.add(new THREE.Line(geo,mat));}}}
+function updateKPIs(){const deckAW=localAoA(0.05).aw.dir,headAW=localAoA(0.95).aw.dir;out.awaDeck.textContent=`${wrap360(deckAW).toFixed(0)}°`;out.awaHead.textContent=`${wrap360(headAW).toFixed(0)}°`;const twa=wrap360(state.twd-state.hdg);out.twa.textContent=`${twa.toFixed(0)}°`;out.boomAng.textContent=`${boomAngleDeg().toFixed(1)}°`;const bands=[];for(let i=0;i<=SAIL.bands;i++){const h=i/SAIL.bands;bands.push(localAoA(h));}const eff=efficiency(bands);out.effBar.style.width=`${eff.eff.toFixed(0)}%`;out.effTxt.textContent=`Efficiency: ${eff.eff.toFixed(0)} / 100\nGuidance: keep mid‑band AoA within ${state.aoaMin.toFixed(0)}–${state.aoaMax.toFixed(0)}°; traveller for groove, sheet for twist.`;out.aoaBands.textContent=bands.map(b=>`Band ${Math.round(b.h*100)}%: AoA ${b.aoa.toFixed(1)}°  (twist +${b.twist.toFixed(1)}°)`).join("\n");out.taleTxt.textContent=eff.notes.map((t,i)=>`Band ${Math.round(i*100/(eff.notes.length-1))}%: ${t}`).join("\n");}
+function rebuild(){const boom=boomAngleDeg();const twist=baseTwistDeg();const geom=buildSailGeometry(boom,twist);if(!sailMesh){const mat=new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide});sailMesh=new THREE.Mesh(geom,mat);scene.add(sailMesh);}else{sailMesh.geometry.dispose();sailMesh.geometry=geom;}updateTelltales(boom,twist);updateKPIs();}
+function fitToView(){if(!sailMesh)return;const box=new THREE.Box3().setFromObject(sailMesh);const sphere=box.getBoundingSphere(new THREE.Sphere());controls3d.target.copy(sphere.center);const dist=sphere.radius/Math.sin(rad(camera.fov/2));camera.position.set(sphere.center.x+dist,sphere.center.y+dist,sphere.center.z+dist);controls3d.update();}
+function resetCamera(){controls3d.reset();fitToView();}
+function topDown(){if(!sailMesh)return;const box=new THREE.Box3().setFromObject(sailMesh);const c=box.getCenter(new THREE.Vector3());camera.position.set(c.x,c.y+30,c.z);controls3d.target.copy(c);controls3d.update();}
+window.addEventListener('keydown',e=>{if(e.key==='r'||e.key==='R')resetCamera();else if(e.key==='t'||e.key==='T')topDown();else if(e.key==='f'||e.key==='F')fitToView();});
+canvas.addEventListener('dblclick',()=>fitToView());
+function resize(){const r=canvas.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix();fitToView();}
+window.addEventListener('resize',resize);
+function bind(){const bindOne=(i,k,m=v=>+v)=>{i.addEventListener('input',()=>{state[k]=m(i.value);updateLabels();needsRebuild=true;});};controls.tws.value=state.tws;bindOne(controls.tws,'tws');controls.twd.value=state.twd;bindOne(controls.twd,'twd',v=>wrap360(+v));controls.hdg.value=state.hdg;bindOne(controls.hdg,'hdg',v=>wrap360(+v));controls.sog.value=state.sog;bindOne(controls.sog,'sog');controls.sheet.value=state.sheet;bindOne(controls.sheet,'sheet');controls.trav.value=state.trav;bindOne(controls.trav,'trav');controls.alpha.value=state.alpha;bindOne(controls.alpha,'alpha');controls.aoaMin.value=state.aoaMin;bindOne(controls.aoaMin,'aoaMin');controls.aoaMax.value=state.aoaMax;bindOne(controls.aoaMax,'aoaMax');controls.flow.value=state.flow;bindOne(controls.flow,'flow');el('reset').addEventListener('click',()=>{Object.assign(state,{tws:8,twd:60,hdg:35,sog:3.5,sheet:75,trav:-10,alpha:0.12,aoaMin:6,aoaMax:14,flow:1});controls.tws.value=state.tws;controls.twd.value=state.twd;controls.hdg.value=state.hdg;controls.sog.value=state.sog;controls.sheet.value=state.sheet;controls.trav.value=state.trav;controls.alpha.value=state.alpha;controls.aoaMin.value=state.aoaMin;controls.aoaMax.value=state.aoaMax;controls.flow.value=state.flow;updateLabels();needsRebuild=true;resetCamera();});}
+function tick(){requestAnimationFrame(tick);controls3d.update();if(needsRebuild){rebuild();needsRebuild=false;}renderer.render(scene,camera);}
+bind();updateLabels();resize();needsRebuild=true;tick();
 </script>
 </body>
 </html>
