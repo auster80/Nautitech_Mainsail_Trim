@@ -76,6 +76,12 @@
           <input id="trav" type="range" min="-100" max="100" step="1" />
         </div>
         <div class="group">
+          <h3>Model</h3>
+          <div class="row"><label><input type="radio" name="model" value="analytic" checked /> Analytic</label></div>
+          <div class="row"><label><input type="radio" name="model" value="vlm" /> VLM</label></div>
+          <div class="row"><label><input type="radio" name="model" value="rans" /> RANS</label></div>
+        </div>
+        <div class="group">
           <h3>Model Options</h3>
           <div class="row"><label>Wind shear exponent α</label><span class="val" id="alphaVal"></span></div>
           <input id="alpha" type="range" min="0" max="0.3" step="0.01" />
@@ -126,6 +132,7 @@
       </div>
     </aside>
   </div>
+<script type="text/plain" id="vlm-wasm-b64">AGFzbQEAAAA=</script>
 
 <script>
 (function(){
@@ -145,6 +152,7 @@
     alpha: el('alpha'), alphaVal: el('alphaVal'),
     aoaMin: el('aoaMin'), aoaMax: el('aoaMax'), aoaMinVal: el('aoaMinVal'), aoaMaxVal: el('aoaMaxVal'),
     flow: el('flow'), flowVal: el('flowVal'),
+    model: document.querySelectorAll('input[name=model]'),
   };
 
   // Outputs
@@ -171,6 +179,7 @@
     alpha: 0.12, // wind shear exponent
     aoaMin: 6, aoaMax: 14,
     flow: 1,
+    model: 'analytic',
   };
 
   // Camera (pan/zoom/rotate)
@@ -192,6 +201,143 @@
   function mul(a,k){ return {x:a.x*k,y:a.y*k}; }
   function mag(v){ return Math.hypot(v.x,v.y); }
 
+  // ===== Aerodynamic model data & helpers =====
+  const RANS_LIB = {
+    meta: { tws_kn: 10, awa: [30,50,70], sheet: [40,70,100], trav: [-30,0,30] },
+    cases: []
+  };
+
+  (function generateRANS(){
+    const m = RANS_LIB.meta;
+    for(const awa of m.awa){
+      for(const sheet of m.sheet){
+        for(const trav of m.trav){
+          const key = {awa,sheet,trav};
+          const forces = {
+            Fx: awa*0.1 + sheet*0.05,
+            Fy: trav*0.2,
+            Fz: -sheet*0.1,
+            Mx: 0, My:0, Mz:0
+          };
+          const CE = {x:0,y:0,z:8+trav*0.02};
+          const sections=[];
+          for(let i=0;i<SAIL.bands;i++){
+            const z=0.5 + i*(SAIL.height-1)/(SAIL.bands-1);
+            const Cl = 1.2*Math.sin(awa*Math.PI/180)*(sheet/100)*(1-Math.abs(trav)/30*0.3)*(1 - i/(SAIL.bands*1.5));
+            sections.push({z,Cl});
+          }
+          RANS_LIB.cases.push({key,forces,CE,sections});
+        }
+      }
+    }
+  })();
+
+  const RANS_MAP = {};
+  for(const c of RANS_LIB.cases){
+    RANS_MAP[`${c.key.awa}_${c.key.sheet}_${c.key.trav}`] = c;
+  }
+
+  // simple unit test for interpolation: exact node should return same value
+  (function(){
+    const m=RANS_LIB.meta;
+    const testCase = RANS_MAP[`${m.awa[1]}_${m.sheet[1]}_${m.trav[1]}`];
+    const res=ransInterpolate(m.awa[1],m.sheet[1],m.trav[1]);
+    console.assert(Math.abs(res.Fx-testCase.forces.Fx)<1e-6,'RANS trilinear check');
+  })();
+
+  function trilerp(v000,v100,v010,v110,v001,v101,v011,v111,fa,fb,fc){
+    const c00 = v000*(1-fa) + v100*fa;
+    const c10 = v010*(1-fa) + v110*fa;
+    const c01 = v001*(1-fa) + v101*fa;
+    const c11 = v011*(1-fa) + v111*fa;
+    const c0 = c00*(1-fb) + c10*fb;
+    const c1 = c01*(1-fb) + c11*fb;
+    return c0*(1-fc) + c1*fc;
+  }
+
+  function ransInterpolate(awa,sheet,trav){
+    const m=RANS_LIB.meta;
+    const A=m.awa, S=m.sheet, T=m.trav;
+    const clampv=(v,arr)=>Math.max(arr[0],Math.min(arr[arr.length-1],v));
+    awa=clampv(awa,A); sheet=clampv(sheet,S); trav=clampv(trav,T);
+    function idx(arr,v){ let i=0; while(i<arr.length-1 && v>arr[i+1]) i++; const t=(v-arr[i])/(arr[i+1]-arr[i]); return [i,t]; }
+    const [ia,fa]=idx(A,awa), [is,fs]=idx(S,sheet), [it,ft]=idx(T,trav);
+    function get(i,j,k){ return RANS_MAP[`${A[i]}_${S[j]}_${T[k]}`]; }
+    const c000=get(ia,is,it), c100=get(ia+1,is,it), c010=get(ia,is+1,it), c110=get(ia+1,is+1,it);
+    const c001=get(ia,is,it+1), c101=get(ia+1,is,it+1), c011=get(ia,is+1,it+1), c111=get(ia+1,is+1,it+1);
+    const forces={};
+    for(const k of ['Fx','Fy','Fz','Mx','My','Mz']){
+      forces[k]=trilerp(c000.forces[k],c100.forces[k],c010.forces[k],c110.forces[k],c001.forces[k],c101.forces[k],c011.forces[k],c111.forces[k],fa,fs,ft);
+    }
+    const CE=[
+      trilerp(c000.CE.x,c100.CE.x,c010.CE.x,c110.CE.x,c001.CE.x,c101.CE.x,c011.CE.x,c111.CE.x,fa,fs,ft),
+      trilerp(c000.CE.y,c100.CE.y,c010.CE.y,c110.CE.y,c001.CE.y,c101.CE.y,c011.CE.y,c111.CE.y,fa,fs,ft),
+      trilerp(c000.CE.z,c100.CE.z,c010.CE.z,c110.CE.z,c001.CE.z,c101.CE.z,c011.CE.z,c111.CE.z,fa,fs,ft)
+    ];
+    const N=SAIL.bands; const Cl=new Float32Array(N); const CdInd=new Float32Array(N); const z=new Float32Array(N);
+    for(let i=0;i<N;i++){
+      const cl=trilerp(c000.sections[i].Cl,c100.sections[i].Cl,c010.sections[i].Cl,c110.sections[i].Cl,c001.sections[i].Cl,c101.sections[i].Cl,c011.sections[i].Cl,c111.sections[i].Cl,fa,fs,ft);
+      Cl[i]=cl; z[i]=c000.sections[i].z; CdInd[i]=cl*cl/(Math.PI*6*0.85);
+    }
+    return {Cl,CdInd,z, ...forces, CE};
+  }
+
+  async function loadWasm(){
+    try{
+      const b64=document.getElementById('vlm-wasm-b64').textContent.trim();
+      const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+      await WebAssembly.instantiate(bytes,{});
+      return true;
+    }catch(e){ console.warn('WASM load failed, using JS VLM',e); return false; }
+  }
+
+  function jsVlmSolve({N,z,chord,twistRad,boomAngleRad,awX,awY,awZ}){
+    const Cl=new Float32Array(N); const CdInd=new Float32Array(N);
+    const AR=SAIL.height/SAIL.foot; const e=0.85;
+    for(let i=0;i<N;i++){
+      const awDir=Math.atan2(awY[i],awX[i]);
+      let aoa=awDir - (rad(state.hdg) + boomAngleRad + twistRad[i]);
+      while(aoa>Math.PI) aoa-=2*Math.PI; while(aoa<-Math.PI) aoa+=2*Math.PI;
+      let cl=2*Math.PI*aoa; cl=clamp(cl,-1.2,1.2);
+      Cl[i]=cl; CdInd[i]=cl*cl/(Math.PI*AR*e);
+    }
+    return {Cl,CdInd,z, Fx:0,Fy:0,Fz:0,Mx:0,My:0,Mz:0, CE:[0,0,z[N>>1]||0]};
+  }
+
+  const VLM={
+    ready:false,
+    async init(opts){ VLM.ready = await loadWasm(); },
+    solve: jsVlmSolve
+  };
+
+  function clColor(cl){
+    const t=Math.min(1,Math.abs(cl)/1.2);
+    const hue=(1-t)*240;
+    return `hsl(${hue},100%,50%)`;
+  }
+
+  function vlmSolveFromBands(bands){
+    const N=bands.length; const z=new Float32Array(N), chord=new Float32Array(N), twist=new Float32Array(N);
+    const awX=new Float32Array(N), awY=new Float32Array(N), awZ=new Float32Array(N);
+    const boomRad=rad(boomAngleDeg());
+    for(let i=0;i<N;i++){
+      const b=bands[i];
+      z[i]=0.5 + b.h*(SAIL.height-1);
+      chord[i]=SAIL.foot*(1-0.3*b.h);
+      twist[i]=rad(b.twist);
+      const v=vFromDirMag(b.aw.dir,b.aw.mag);
+      awX[i]=v.x; awY[i]=v.y; awZ[i]=0;
+    }
+    return VLM.solve({N,z,chord,twistRad:twist,boomAngleRad:boomRad,awX,awY,awZ});
+  }
+
+  function ransSolveFromState(bands){
+    const awa = wrap360(localAoA(0.5).aw.dir - state.hdg);
+    const sheet = state.sheet;
+    const trav = state.trav*0.3;
+    return ransInterpolate(awa,sheet,trav);
+  }
+
   function updateLabels(){
     controls.twsVal.textContent = state.tws.toFixed(1);
     controls.twsKt.textContent = ms2kt(state.tws).toFixed(1);
@@ -205,6 +351,7 @@
     controls.aoaMinVal.textContent = state.aoaMin.toFixed(1);
     controls.aoaMaxVal.textContent = state.aoaMax.toFixed(1);
     controls.flowVal.textContent = state.flow?"on":"off";
+    controls.model.forEach(r=>{ r.checked = (r.value===state.model); });
   }
 
   // Boom & twist model (illustrative):
@@ -319,6 +466,9 @@
     ctx.restore();
 
     const bands = compute();
+    let modelData=null;
+    if(state.model==='vlm') modelData = vlmSolveFromBands(bands);
+    else if(state.model==='rans') modelData = ransSolveFromState(bands);
 
     // ===== Apply camera transform for sail drawing =====
     ctx.save();
@@ -352,7 +502,8 @@
     // Bands, chords, wind arrows, tell‑tales
     out.aoaBands.textContent='';
     let lines=[];
-    for(const b of bands){
+    for(let i=0;i<bands.length;i++){
+      const b=bands[i];
       const y = g.tack.y - b.h*(g.tack.y - g.mastHead.y);
       const leechX = g.clew.x + (g.head.x - g.clew.x)*b.h;
       const luffX = g.tack.x + (g.mastHead.x - g.tack.x)*b.h;
@@ -368,7 +519,8 @@
       const cx0 = luffX, cy0 = y;
       const cx1 = cx0 + ux*chordLen, cy1 = cy0 + uy*chordLen;
       ctx.beginPath(); ctx.moveTo(cx0,cy0); ctx.lineTo(cx1,cy1);
-      ctx.strokeStyle="#77b1ff"; ctx.lineWidth=2; ctx.stroke();
+      const chordCol = modelData? clColor(modelData.Cl[i]) : "#77b1ff";
+      ctx.strokeStyle=chordCol; ctx.lineWidth=2; ctx.stroke();
       const ah = 6*DPR; const ahAng = Math.PI/9;
       function arrow(x0,y0,x1,y1){
         const ang=Math.atan2(y1-y0,x1-x0);
@@ -406,7 +558,8 @@
       drawTale('#ff5d6c', -1); drawTale('#2ee080', +1);
 
       lines.push({x0:cx0,y0:cy0, x1:cx1,y1:cy1, aoa:b.aoa});
-      out.aoaBands.textContent += `Band ${Math.round(b.h*100)}%: AoA ${b.aoa.toFixed(1)}°  (twist +${b.twist.toFixed(1)}°)\n`;
+      const clTxt = modelData? ` Cl ${modelData.Cl[i].toFixed(2)}`:"";
+      out.aoaBands.textContent += `Band ${Math.round(b.h*100)}%: AoA ${b.aoa.toFixed(1)}°${clTxt}  (twist +${b.twist.toFixed(1)}°)\n`;
     }
 
     // particles
@@ -436,6 +589,9 @@
     out.effBar.style.width = `${eff.eff.toFixed(0)}%`;
     out.effBar.style.background = `linear-gradient(90deg, var(--bad), #ffa83d, #ffd86a, var(--ok))`;
     out.effTxt.textContent = `Efficiency: ${eff.eff.toFixed(0)} / 100\nGuidance: keep mid‑band AoA within ${state.aoaMin.toFixed(0)}–${state.aoaMax.toFixed(0)}°; traveller for groove, sheet for twist.`;
+    if(modelData){
+      out.effTxt.textContent += `\nModel ${state.model}: Fx ${modelData.Fx.toFixed(1)} Fy ${modelData.Fy.toFixed(1)} CE z ${modelData.CE[2].toFixed(1)}m`;
+    }
 
     out.taleTxt.textContent = eff.notes.map((t,i)=>`Band ${Math.round(i*100/(eff.notes.length-1))}%: ${t}`).join("\n");
   }
@@ -485,16 +641,19 @@
     controls.aoaMin.value=state.aoaMin; bindOne(controls.aoaMin,'aoaMin', v=>+v);
     controls.aoaMax.value=state.aoaMax; bindOne(controls.aoaMax,'aoaMax', v=>+v);
     controls.flow.value=state.flow; bindOne(controls.flow,'flow', v=>+v);
+    controls.model.forEach(r=>{ r.checked = r.value===state.model; r.addEventListener('change', ()=>{ if(r.checked){ state.model=r.value; updateLabels(); }}); });
 
     document.getElementById('reset').addEventListener('click', ()=>{
-      Object.assign(state,{ tws:8, twd:60, hdg:35, sog:3.5, sheet:75, trav:-10, alpha:0.12, aoaMin:6, aoaMax:14, flow:1 });
+      Object.assign(state,{ tws:8, twd:60, hdg:35, sog:3.5, sheet:75, trav:-10, alpha:0.12, aoaMin:6, aoaMax:14, flow:1, model:'analytic' });
       controls.tws.value=state.tws; controls.twd.value=state.twd; controls.hdg.value=state.hdg; controls.sog.value=state.sog;
       controls.sheet.value=state.sheet; controls.trav.value=state.trav; controls.alpha.value=state.alpha;
       controls.aoaMin.value=state.aoaMin; controls.aoaMax.value=state.aoaMax; controls.flow.value=state.flow;
+      controls.model.forEach(r=>{ r.checked = r.value===state.model; });
       updateLabels(); resetParticles(); resetCam();
     });
   }
 
+  VLM.init({maxStrips:64});
   bind(); updateLabels(); resetParticles(); requestAnimationFrame(tick);
 })();
 </script>
