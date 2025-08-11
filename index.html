@@ -177,6 +177,19 @@
   const cam = { scale: 1, rot: 0, panX: 0, panY: 0 }; // pan in CSS pixels * DPR
   function resetCam(){ cam.scale=1; cam.rot=0; cam.panX=0; cam.panY=0; }
 
+  function worldToScreen(wx, wy){
+    const cx=W*0.5, cy=H*0.5; const cosR=Math.cos(cam.rot), sinR=Math.sin(cam.rot);
+    const x=(wx-cx)*cam.scale; const y=(wy-cy)*cam.scale;
+    const xr=x*cosR - y*sinR; const yr=x*sinR + y*cosR;
+    return { x:xr + cx + cam.panX, y:yr + cy + cam.panY };
+  }
+  function screenToWorld(sx, sy){
+    const cx=W*0.5, cy=H*0.5; const cosR=Math.cos(cam.rot), sinR=Math.sin(cam.rot);
+    let x=sx - cam.panX - cx; let y=sy - cam.panY - cy;
+    const xr=x*cosR + y*sinR; const yr=-x*sinR + y*cosR;
+    return { x:xr / cam.scale + cx, y:yr / cam.scale + cy };
+  }
+
   // Helpers
   const rad = d=>d*Math.PI/180; const deg = r=>r*180/Math.PI; const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
   const wrap360 = a => (a%360+360)%360;
@@ -276,6 +289,7 @@
     W=Math.floor(r.width*DPR); H=Math.floor(minH*DPR);
     view.width=W; view.height=H;
     view.style.width=r.width+'px'; view.style.height=(minH)+'px';
+    resetCam();
   }
   window.addEventListener('resize', resize);
   resize();
@@ -297,12 +311,16 @@
   function spawnParticle(){ return { t: Math.random(), band: Math.floor(Math.random()*SAIL.bands), speed: 0.2+Math.random()*0.4 }; }
 
   function sailPath(){
-    const baseX = W*0.25, baseY = H*0.82; // tack position
-    const luff = SAIL.height*8.5*DPR/10;
-    const foot = SAIL.foot*28*DPR/10;
-    const headOut = SAIL.headExtra*26*DPR/10;
+    const target = H*0.7; // fit 70% of canvas height
+    const m2p = target/SAIL.height;
+    const luff = SAIL.height*m2p;
+    const foot = SAIL.foot*m2p;
+    const headOut = SAIL.headExtra*m2p;
+    const cx=W*0.5, cy=H*0.5;
+    const baseX = cx - foot/2;
+    const baseY = cy + luff/2;
     const tack = {x:baseX, y:baseY};
-    const clew = {x:baseX+foot, y:baseY-10*DPR};
+    const clew = {x:baseX+foot, y:baseY-0.3*m2p};
     const head = {x:baseX+headOut, y:baseY-luff};
     const mastHead = {x:baseX, y:baseY-luff};
     return {tack, clew, head, mastHead};
@@ -323,7 +341,8 @@
     // ===== Apply camera transform for sail drawing =====
     ctx.save();
     const cx = W*0.5, cy = H*0.5;
-    ctx.translate(cx + cam.panX, cy + cam.panY);
+    ctx.translate(cam.panX, cam.panY);
+    ctx.translate(cx, cy);
     ctx.rotate(cam.rot);
     ctx.scale(cam.scale, cam.scale);
     ctx.translate(-cx, -cy);
@@ -444,30 +463,36 @@
   let last=0; function tick(ts){ if (!last) last=ts; last=ts; drawScene(); requestAnimationFrame(tick); }
 
   // Mouse interactions
-  const drag = { mode:null, x:0, y:0 };
+  const drag = { mode:null, x:0, y:0, sx:0, sy:0, world:null, startRot:0 };
   function getMouse(e){ const r=view.getBoundingClientRect(); return { x:(e.clientX - r.left)*DPR, y:(e.clientY - r.top)*DPR }; }
   view.addEventListener('contextmenu', e=>e.preventDefault());
   view.classList.add('grab');
   view.addEventListener('mousedown', e=>{
-    const m=getMouse(e); drag.x=m.x; drag.y=m.y;
+    const m=getMouse(e); drag.x=m.x; drag.y=m.y; drag.sx=m.x; drag.sy=m.y;
     if (e.button===0 && !e.altKey){ drag.mode='pan'; view.classList.remove('grab'); view.classList.add('grabbing'); }
-    else { drag.mode='rot'; }
+    else { drag.mode='rot'; drag.world=screenToWorld(m.x,m.y); drag.startRot=cam.rot; }
   });
   window.addEventListener('mouseup', ()=>{ drag.mode=null; view.classList.remove('grabbing'); view.classList.add('grab'); });
   window.addEventListener('mouseleave', ()=>{ drag.mode=null; view.classList.remove('grabbing'); view.classList.add('grab'); });
   window.addEventListener('mousemove', e=>{
-    if(!drag.mode) return; const m=getMouse(e); const dx=m.x-drag.x, dy=m.y-drag.y; drag.x=m.x; drag.y=m.y;
-    if(drag.mode==='pan'){ cam.panX += dx; cam.panY += dy; }
-    else if(drag.mode==='rot'){ cam.rot += dx*0.005; }
+    if(!drag.mode) return; const m=getMouse(e);
+    if(drag.mode==='pan'){
+      const dx=m.x-drag.x, dy=m.y-drag.y; drag.x=m.x; drag.y=m.y;
+      cam.panX += dx; cam.panY += dy;
+    } else if(drag.mode==='rot'){
+      cam.rot = drag.startRot + (m.x - drag.sx)*0.005;
+      const p = worldToScreen(drag.world.x, drag.world.y);
+      cam.panX += m.x - p.x; cam.panY += m.y - p.y;
+    }
   });
   view.addEventListener('wheel', e=>{
     e.preventDefault();
     const m=getMouse(e);
-    const old = cam.scale; const dir = (e.deltaY<0)?1.1:1/1.1; const ns = clamp(old*dir, 0.4, 5);
-    const factor = ns/old; const cx=W*0.5, cy=H*0.5;
-    cam.panX = m.x - (m.x - (cx+cam.panX))*factor;
-    cam.panY = m.y - (m.y - (cy+cam.panY))*factor;
+    const pre = screenToWorld(m.x, m.y);
+    const dir = (e.deltaY<0)?1.1:1/1.1; const ns = clamp(cam.scale*dir, 0.4, 5);
     cam.scale = ns;
+    const post = worldToScreen(pre.x, pre.y);
+    cam.panX += m.x - post.x; cam.panY += m.y - post.y;
   }, {passive:false});
   view.addEventListener('dblclick', ()=>{ resetCam(); });
 
